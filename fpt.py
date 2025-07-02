@@ -9,7 +9,6 @@ import pandas as pd
 import time
 import os
 
-# Dữ liệu đầu vào
 dict_input = {
     "Mã số thuế": ["0304244470", "0304244471", "0304308445", "", "", "", "", "", ""],
     "Mã tra cứu": ["r08e17y79g", "r46jvxmvxg", "rzmwy1yo4g", "B1HEIRR8N0WP", "PZH_FWQ4BN3", "VBHKSL682918", "NII30XVQWNC", "MHPLO8W6EMD", "MIJ634K9JAD"],
@@ -44,7 +43,6 @@ def doi_file_tai_xong(folder_path, timeout=60):
     
     return False
 
-#  Đổi tên file .crdownload thành .xml
 def doi_ten_file_crdownload(folder_path, new_ext=".xml"):
     for f in os.listdir(folder_path):
         if f.endswith(".crdownload"):
@@ -94,7 +92,7 @@ def tra_cuu_hoa_don(driver, url, mst, ma_tra_cuu):
                 driver.execute_script("arguments[0].click();", search_button)
                 print(f" VAN: {ma_tra_cuu}")
             except Exception as e:
-                print(f" ❌ Lỗi tra cứu (evanhoadon.vn): {e}")
+                print(f"  Lỗi tra cứu (evanhoadon.vn): {e}")
         else:
             print(f" Trang không hỗ trợ: {url}")
 
@@ -146,7 +144,7 @@ def kiem_tra_ket_qua(driver, url):
         return "Lỗi kiểm tra"
 
 # Hàm tải hóa đơn XML hoặc PDF tùy trang
-def tai_hoa_don(driver, url):
+def tai_hoa_don(driver, url, ma_tra_cuu):
     try:
         if "fpt" in url:
             try:
@@ -169,17 +167,37 @@ def tai_hoa_don(driver, url):
 
         elif "meinvoice.vn" in url:
             try:
-                wait = WebDriverWait(driver, 10)  # ← bổ sung dòng này
+                wait = WebDriverWait(driver, 10)
+                folder = r"D:\RPA\duanFPT"
+                before_files = set(os.listdir(folder))
+
+                # Mở menu tải hóa đơn
                 xpath_menu = '//*[@id="popup-content-container"]/div[1]/div[2]/div[12]/div'
                 menu = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_menu)))
                 menu.click()
                 print(" Đã click menu tải hóa đơn (MISA)")
 
+                # Click nút tải PDF → thực tế là XML
                 xpath_pdf = '//*[@id="popup-content-container"]/div[1]/div[2]/div[12]/div/div/div[2]'
-                xml = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_pdf)))
-                xml.click()
-                print(" Đã click nút tải PDF (MISA)")
-                time.sleep(5)
+                xml_btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_pdf)))
+                xml_btn.click()
+                print(" Đã click nút tải XML (MISA)")
+
+                time.sleep(5)  # Đợi tải file
+
+                # Đổi tên file mới tải về thành ma_tra_cuu.xml
+                after_files = set(os.listdir(folder))
+                new_file = list(after_files - before_files)
+                if new_file:
+                    downloaded_file = new_file[0]
+                    old_path = os.path.join(folder, downloaded_file)
+                    new_name = f"{ma_tra_cuu}.xml"
+                    new_path = os.path.join(folder, new_name)
+                    os.rename(old_path, new_path)
+                    print(f" ✅ Đã đổi tên file MISA thành: {new_name}")
+                else:
+                    print(" ⚠️ Không tìm thấy file mới tải để đổi tên!")
+
             except Exception as e:
                 print(f" Lỗi khi tải hóa đơn (MISA): {e}")
         elif "van.ehoadon.vn" in url:
@@ -188,17 +206,17 @@ def tai_hoa_don(driver, url):
 
                 # Đợi iframe sẵn sàng và chuyển vào
                 wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "frameViewInvoice")))
-                print("✅ Đã chuyển vào iframe hóa đơn (evanhoadon.vn)")
+                print(" Đã chuyển vào iframe hóa đơn (evanhoadon.vn)")
 
                 # Đợi nút tải PDF có thể click
                 taihoadon = wait.until(EC.element_to_be_clickable((By.ID, "btnDownload")))
                 driver.execute_script("arguments[0].click();", taihoadon)
-                print("✅ Đã click nút tải PDF")
+                print(" Đã click nút tải PDF")
 
                 # Đợi nút tải XML có thể click
                 taixml = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="LinkDownXML"]')))
                 driver.execute_script("arguments[0].click();", taixml)
-                print("✅ Đã click nút tải XML")
+                print(" Đã click nút tải XML")
 
                 time.sleep(5)
 
@@ -206,7 +224,7 @@ def tai_hoa_don(driver, url):
                 driver.switch_to.default_content()
 
             except Exception as e:
-                print(f"❌ Lỗi khi tải hóa đơn (evanhoadon.vn): {e}")
+                print(f" Lỗi khi tải hóa đơn (evanhoadon.vn): {e}")
     except Exception as e:
         print(f" Lỗi khi tải hóa đơn: {e}")
 
@@ -219,20 +237,22 @@ def trich_xuat_theo_input(df_input, folder_path):
         el = root.find(path)
         return el.text.strip() if el is not None and el.text else ""
 
-    # Danh sách file XML đã tải
-    xml_files = sorted([f for f in os.listdir(folder_path) if f.endswith(".xml")])
-    
+    # Lấy danh sách file XML
+    xml_files = [f for f in os.listdir(folder_path) if f.endswith(".xml")]
+
     for i, row in df_input.iterrows():
         mst_input = str(row["Mã số thuế"]).strip()
         ma_tra_cuu = str(row["Mã tra cứu"]).strip()
         url = str(row["URL"]).strip()
 
-        # Giả định thứ tự file xml trùng với input (nếu không có thì để trống)
-        try:
-            filename = xml_files[i]
-            filepath = os.path.join(folder_path, filename)
-        except IndexError:
-            filepath = None
+        # === Tìm file có chứa mã tra cứu ===
+        matched_file = None
+        for f in xml_files:
+            if ma_tra_cuu.lower() in f.lower():
+                matched_file = f
+                break
+
+        filepath = os.path.join(folder_path, matched_file) if matched_file else None
 
         if filepath and os.path.exists(filepath):
             try:
@@ -249,11 +269,10 @@ def trich_xuat_theo_input(df_input, folder_path):
                 mst_mua = get_text(root, ".//NMua/MST")
 
             except Exception as e:
-                print(f"❌ Lỗi đọc file {filename}: {e}")
-                # Nếu lỗi file XML, giữ nguyên các trường trích xuất rỗng
+                print(f" Lỗi đọc file {matched_file}: {e}")
                 so_hd = don_vi_ban = mst_ban = dia_chi_ban = stk_ban = ten_mua = dia_chi_mua = mst_mua = ""
         else:
-            print(f"⚠️ Không có file XML tương ứng dòng {i+1}: {ma_tra_cuu}")
+            print(f" Không tìm thấy file XML cho dòng {i+1}: {ma_tra_cuu}")
             so_hd = don_vi_ban = mst_ban = dia_chi_ban = stk_ban = ten_mua = dia_chi_mua = mst_mua = ""
 
         data.append({
@@ -274,11 +293,10 @@ def trich_xuat_theo_input(df_input, folder_path):
     df_out = pd.DataFrame(data)
     output_path = os.path.join(folder_path, "output_hoa_don_final.xlsx")
     df_out.to_excel(output_path, index=False)
-    print(f"\n✅ Đã xuất dữ liệu ra: {output_path}")
+    print(f"\n Đã xuất dữ liệu ra: {output_path}")
 
 
 
-    # Sau khi duyệt và tải xong hóa đơn
 def main():
     df = pd.read_excel("input.xlsx", dtype={"Mã số thuế": str})
     for index, row in df.iterrows():
@@ -287,17 +305,16 @@ def main():
         url = str(row['URL']).strip()
         if "van.ehoadon.vn" in url and not url.endswith(ma_tra_cuu):
             url += ma_tra_cuu
-        print(f"\n🔍 Tra cứu dòng {index+1}: {mst} - {ma_tra_cuu} ({url})")
+        print(f"\n Tra cứu dòng {index+1}: {mst} - {ma_tra_cuu} ({url})")
 
         driver = open_chrome()
         tra_cuu_hoa_don(driver, url, mst, ma_tra_cuu)
 
         if kiem_tra_ket_qua(driver, url) == "Tìm thấy hóa đơn":
-            tai_hoa_don(driver, url)
+            tai_hoa_don(driver, url,ma_tra_cuu)
 
         driver.quit()
 
-    # ✅ Trích xuất dữ liệu ra đúng 9 dòng
     trich_xuat_theo_input(df, r"D:\RPA\duanFPT")
 
 main()
